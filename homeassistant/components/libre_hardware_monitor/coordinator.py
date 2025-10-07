@@ -92,6 +92,10 @@ class LibreHardwareMonitorCoordinator(DataUpdateCoordinator[LibreHardwareMonitor
             ) from err
         except LibreHardwareMonitorNoDevicesError as err:
             raise UpdateFailed("No sensor data available, will retry") from err
+        except Exception as err:
+            # Catch any unexpected errors to prevent coordinator crashes
+            _LOGGER.debug("Unexpected error fetching LibreHardwareMonitor data: %s", err)
+            raise UpdateFailed("Unexpected error occurred, will retry") from err
 
         await self._async_handle_changes_in_devices(lhm_data.main_device_ids_and_names)
 

@@ -93,8 +93,13 @@ class LibreHardwareMonitorSensor(
 
     def _update_sensor_data(self, sensor_data: LibreHardwareMonitorSensorData) -> None:
         """Update sensor data with normalization applied."""
-        # Normalize data rate values to MB/s for consistency
-        normalized_value, normalized_unit = self._normalize_data_rate(sensor_data.value, sensor_data.unit)
+        value = sensor_data.value or ""  # Convert None to empty string
+
+        # cast to str to satisfy type checker
+        normalized_value, normalized_unit = self._normalize_data_rate(
+            value, str(sensor_data.unit) if sensor_data.unit is not None else None
+        )
+
         self.value = normalized_value
         self._attr_native_unit_of_measurement = normalized_unit
 
@@ -127,17 +132,17 @@ class LibreHardwareMonitorSensor(
         except (ValueError, TypeError):
             return False
 
-    def _normalize_data_rate(self, value: str, unit: str) -> tuple[str, str]:
+    def _normalize_data_rate(self, value: str, unit: str | None) -> tuple[str, str]:
         """Normalize data rate values to MB/s for consistency.
 
         Converts kB/s, MB/s, and GB/s to MB/s to prevent unit changes
         that confuse Home Assistant's data logging and statistics.
         """
-        if not value or value == "-":
-            return value, unit
+        # Early return if unit is None
+        if unit is None:
+            return value, ""
 
-        # Early validation to avoid unnecessary processing
-        if not self._is_valid_numeric_value(value):
+        if not value or value == "-":
             return value, unit
 
         try:
@@ -151,18 +156,26 @@ class LibreHardwareMonitorSensor(
                     return "0.0", "MB/s"
                 return value, unit
 
+            # Only normalize known data rate units
+            if unit not in ("kB/s", "MB/s", "GB/s"):
+                return value, unit
+
             # Normalize to MB/s with proper rounding
             if unit == "kB/s":
-                normalized_value = round(numeric_value / BYTES_PER_KB, 3)  # kB to MB, 3 decimal places
+                normalized_value = round(
+                    numeric_value / BYTES_PER_KB, 3
+                )  # kB to MB, 3 decimal places
                 return str(normalized_value), "MB/s"
             if unit == "MB/s":
-                normalized_value = round(numeric_value, 3)  # Keep MB/s with 3 decimal places
+                normalized_value = round(
+                    numeric_value, 3
+                )  # Keep MB/s with 3 decimal places
                 return str(normalized_value), "MB/s"
-            if unit == "GB/s":
-                normalized_value = round(numeric_value * BYTES_PER_KB, 3)  # GB to MB, 3 decimal places
-                return str(normalized_value), "MB/s"
-            # Keep other units as-is (temperature, voltage, etc.)
-            return value, unit
+            # Must be GB/s at this point
+            normalized_value = round(
+                numeric_value * BYTES_PER_KB, 3
+            )  # GB to MB, 3 decimal places
+            return str(normalized_value), "MB/s"
 
         except (ValueError, TypeError, OverflowError) as err:
             # Log conversion errors for debugging but don't crash
